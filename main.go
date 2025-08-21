@@ -452,11 +452,6 @@ func formatUnixTimestamp(timestampStr string) string {
 		if timestampInt > 1000000000000 {
 			return time.Unix(timestampInt/1000, 0).UTC().Format("2006-01-02")
 		}
-
-		// Check if it's in seconds
-		//if timestampInt > 1000000000 && timestampInt < 10000000000 {
-		//	return time.Unix(timestampInt, 0).UTC().Format("2006-01-02")
-		//}
 	}
 
 	// Fallback: try to extract date from existing format
