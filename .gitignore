@@ -1,4 +1,4 @@
 *.csv
 *.txt
-live-churn-alerting
+live-churn-alert
 .env

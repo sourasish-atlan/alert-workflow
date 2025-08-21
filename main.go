@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -151,13 +150,7 @@ func main() {
 		return
 	}
 
-	// Export to CSV and report
-	if err := exportToCSV(joinedRecords, "joined_salesforce_data.csv"); err != nil {
-		log.Printf("Error exporting CSV: %v", err)
-	} else {
-		log.Printf("Exported %d records to CSV", len(joinedRecords))
-	}
-
+	// Save report
 	if err := saveReportToFile(joinedRecords, "salesforce_report.txt"); err != nil {
 		log.Printf("Error saving report: %v", err)
 	} else {
@@ -180,11 +173,11 @@ func fetchAccountData(grafanaURL, serviceToken, inClause string) map[string][]st
 
 	req := QueryRequest{
 		Queries: []Query{{
-			QueryText:     queryText,
-			RefID:         "A",
-			Datasource:    DataSource{Type: "michelin-snowflake-datasource", UID: "ae62hcbfe169sf"},
-			Format:        "table",
-			DatasourceID:  31,
+			QueryText:    queryText,
+			RefID:        "A",
+			Datasource:   DataSource{Type: "michelin-snowflake-datasource", UID: "ae62hcbfe169sf"},
+			Format:       "table",
+			DatasourceID: 31,
 			//IntervalMs:    60000,
 			//MaxDataPoints: 1547,
 		}},
@@ -213,10 +206,10 @@ func fetchRemainingData(grafanaURL, serviceToken, inClause string, results *Quer
 		Queries: []Query{{
 			QueryText: fmt.Sprintf(`SELECT DISTINCT LOWER("ID") AS "salesforce_id", "VITALLY_CSM_C" AS "csm"
 			FROM "SALESFORCE"."ACCOUNT" WHERE LOWER("ID") IN (%s) AND "VITALLY_CSM_C" IS NOT NULL`, inClause),
-			RefID:         "C",
-			Datasource:    DataSource{Type: "michelin-snowflake-datasource", UID: "ae62hcbfe169sf"},
-			Format:        "table",
-			DatasourceID:  31,
+			RefID:        "C",
+			Datasource:   DataSource{Type: "michelin-snowflake-datasource", UID: "ae62hcbfe169sf"},
+			Format:       "table",
+			DatasourceID: 31,
 			//IntervalMs:    60000,
 			//MaxDataPoints: 1547,
 		}},
@@ -238,8 +231,8 @@ func fetchRemainingData(grafanaURL, serviceToken, inClause string, results *Quer
 			RawSQL: fmt.Sprintf(`SELECT DISTINCT t.domain, LOWER(a.salesforce_account_id) AS salesforce_id, t.created_at AS tenant_created_date, ue_created.email AS created_by_email 
 			FROM tenants t JOIN accounts a ON t.account_id = a.id LEFT JOIN user_entity ue_created ON ue_created.id = t.created_by::varchar WHERE 
 			LOWER(a.salesforce_account_id) = ANY(SELECT unnest(string_to_array('%s', ','))) AND t.status = 'LIVE'`, csvFormat),
-			Format:        "table",
-			DatasourceID:  36,
+			Format:       "table",
+			DatasourceID: 36,
 		}},
 	}
 
@@ -264,10 +257,10 @@ func fetchRemainingData(grafanaURL, serviceToken, inClause string, results *Quer
 			FROM "ATLAN_CLOUD"."PUBLIC"."MONTHLY_DASHBOARD_CUSTOMER_TENANT_COST_SALESFORCE_VIEW"
 			WHERE DATE_TRUNC('MONTH', BILLING_DATE) = DATE_TRUNC('MONTH', DATEADD(MONTH, -1, CURRENT_DATE))
 			AND LOWER("SALESFORCE_ID") IN (%s) GROUP BY SALESFORCE_ID`, inClause),
-			Format:        "table",
-			RefID:         "D",
-			TimeColumns:   []string{"time"},
-			DatasourceID:  34,
+			Format:       "table",
+			RefID:        "D",
+			TimeColumns:  []string{"time"},
+			DatasourceID: 34,
 			//IntervalMs:    60000,
 			//MaxDataPoints: 1547,
 		}},
@@ -311,43 +304,6 @@ func performLeftJoin(results *QueryResults) []JoinedRecord {
 	}
 
 	return records
-}
-
-// Export records to CSV
-func exportToCSV(records []JoinedRecord, filename string) error {
-	file, err := os.Create(filename)
-	if err != nil {
-		return fmt.Errorf("failed to create CSV file: %w", err)
-	}
-	defer file.Close()
-
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-
-	// Write header
-	header := []string{"salesforce_id", "salesforce_name", "salesforce_type", "domain", "tenant_created_date", "created_by_email", "csm", "cost"}
-	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write CSV header: %w", err)
-	}
-
-	// Write data
-	for _, record := range records {
-		row := []string{
-			getValueOrNA(record.SalesforceID),
-			getValueOrNA(record.SalesforceName),
-			getValueOrNA(record.SalesforceType),
-			getValueOrNA(record.Domain),
-			getValueOrNA(record.TenantCreatedDate),
-			getValueOrNA(record.CreatedByEmail),
-			getValueOrNA(record.CSM),
-			formatCostForCSV(record.Cost),
-		}
-		if err := writer.Write(row); err != nil {
-			return fmt.Errorf("failed to write CSV row: %w", err)
-		}
-	}
-
-	return nil
 }
 
 // Save formatted report to text file
@@ -481,13 +437,6 @@ func formatCostOrNA(cost float64) string {
 		return "N/A"
 	}
 	return fmt.Sprintf("$%.2f", cost)
-}
-
-func formatCostForCSV(cost float64) string {
-	if cost == 0.0 {
-		return "N/A"
-	}
-	return fmt.Sprintf("%.2f", cost)
 }
 
 func formatUnixTimestamp(timestampStr string) string {
