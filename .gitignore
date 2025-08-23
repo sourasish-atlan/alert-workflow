@@ -35,4 +35,5 @@ go.work.sum
 # Misc
 *.csv
 *.txt
+*.json
 live-churn-alert
