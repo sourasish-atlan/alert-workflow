@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+
+# Build artifacts
+bin/
+live-churn-alert
+worker
+client
+
+# Logs
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+*_test.go
+
+# Reports (will be generated at runtime)
+report_*.json
+report.*
+
+# Sample files
+sample.json
+
+.env.example

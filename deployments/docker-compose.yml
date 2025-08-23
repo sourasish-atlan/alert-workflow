@@ -1,0 +1,121 @@
+---
+services:
+  # Temporal Server (using the official Temporal auto-setup image)
+  temporal:
+    container_name: temporal
+    image: temporalio/auto-setup:1.27.2
+    ports:
+      - "7233:7233"   # Temporal server
+      - "8233:8233"   # Temporal Web UI
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=postgresql
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
+    volumes:
+      - ./dynamicconfig:/etc/temporal/config/dynamicconfig
+    depends_on:
+      - postgresql
+    networks:
+      - temporal-network
+    healthcheck:
+      test: [ "CMD", "tctl", "cluster", "health" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  temporal-admin-tools:
+    container_name: temporal-admin-tools
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
+    image: temporalio/admin-tools:1.27.2-tctl-1.18.2-cli-1.3.0
+    networks:
+      - temporal-network
+    stdin_open: true
+    tty: true
+
+  # PostgreSQL for Temporal Server
+  postgresql:
+    container_name: temporal-postgresql
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_USER: temporal
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - temporal-network
+
+  # Temporal Web UI (optional, for monitoring workflows)
+  temporal-ui:
+    container_name: temporal-ui
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    image: temporalio/ui:2.31.2
+    networks:
+      - temporal-network
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8080/health" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Churn Alert Worker
+  worker:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      temporal:
+        condition: service_healthy
+      temporal-ui:
+        condition: service_healthy
+    networks:
+      - temporal-network
+    restart: unless-stopped
+    command: ["./worker"]
+
+  # Optional: Live Churn Alert Client (for triggering workflows)
+  client:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      temporal:
+        condition: service_healthy
+      temporal-ui:
+        condition: service_healthy
+    networks:
+      - temporal-network
+    profiles:
+      - client  # Only start when explicitly requested
+    command: ["./client"]
+
+volumes:
+  postgres-data:
+
+networks:
+  temporal-network:
+    driver: bridge
