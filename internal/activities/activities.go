@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 
 	"live-churn-alerting/internal/types"
@@ -23,9 +24,17 @@ func FetchAccountDataActivity(ctx context.Context, grafanaURL, serviceToken stri
 	defer logger.Sync()
 	sugar := logger.Sugar()
 
+	if err := godotenv.Load(); err != nil {
+		sugar.Info("No .env file found, using environment variables")
+	}
+
+	salesforceUID := os.Getenv("SNOWFLAKE_SALESFORCE_DATASOURCE_UID")
+	if salesforceUID == "" {
+		return nil, fmt.Errorf("SNOWFLAKE_SALESFORCE_DATASOURCE_UID environment variable is required")
+	}
+
 	accountQuery := `SELECT LOWER("ID") AS "salesforce_id", "NAME" AS "salesforce_name", "TYPE" AS "salesforce_type"
-FROM "SALESFORCE"."ACCOUNT"
-WHERE "TYPE" IN ('Lost Opportunity', 'Churned - Customer', 'Churned - Trial');`
+					FROM "SALESFORCE"."ACCOUNT" WHERE "TYPE" IN ('Lost Opportunity', 'Churned - Customer', 'Churned - Trial');`
 
 	queryReq := types.QueryRequest{
 		Queries: []types.Query{
@@ -34,7 +43,7 @@ WHERE "TYPE" IN ('Lost Opportunity', 'Churned - Customer', 'Churned - Trial');`
 				RefID:     "A",
 				Datasource: types.DataSource{
 					Type: "michelin-snowflake-datasource",
-					UID:  "ae62hcbfe169sf",
+					UID:  salesforceUID,
 				},
 				DatasourceID: 40,
 				Format:       "table",
@@ -67,9 +76,13 @@ func FetchCSMDataActivity(ctx context.Context, grafanaURL, serviceToken, inClaus
 	defer logger.Sync()
 	sugar := logger.Sugar()
 
+	salesforceUID := os.Getenv("SNOWFLAKE_SALESFORCE_DATASOURCE_UID")
+	if salesforceUID == "" {
+		return nil, fmt.Errorf("SNOWFLAKE_SALESFORCE_DATASOURCE_UID environment variable is required")
+	}
+
 	csmQuery := fmt.Sprintf(`SELECT DISTINCT LOWER("ID") AS "salesforce_id", "VITALLY_CSM_C" AS "csm"
-FROM "SALESFORCE"."ACCOUNT"
-WHERE LOWER("ID") IN (%s);`, inClause)
+							FROM "SALESFORCE"."ACCOUNT" WHERE LOWER("ID") IN (%s);`, inClause)
 
 	queryReq := types.QueryRequest{
 		Queries: []types.Query{
@@ -78,7 +91,7 @@ WHERE LOWER("ID") IN (%s);`, inClause)
 				RefID:     "C",
 				Datasource: types.DataSource{
 					Type: "michelin-snowflake-datasource",
-					UID:  "ae62hcbfe169sf",
+					UID:  salesforceUID,
 				},
 				DatasourceID: 40,
 				Format:       "table",
@@ -111,6 +124,11 @@ func FetchTenantDataActivity(ctx context.Context, grafanaURL, serviceToken, inCl
 	defer logger.Sync()
 	sugar := logger.Sugar()
 
+	postgresUID := os.Getenv("POSTGRES_DATASOURCE_UID")
+	if postgresUID == "" {
+		return nil, fmt.Errorf("POSTGRES_DATASOURCE_UID environment variable is required")
+	}
+
 	// Convert IN clause format for PostgreSQL
 	csvFormat := strings.ReplaceAll(strings.ReplaceAll(inClause, "'", ""), " ", "")
 
@@ -119,13 +137,13 @@ func FetchTenantDataActivity(ctx context.Context, grafanaURL, serviceToken, inCl
     LOWER(a.salesforce_account_id) AS salesforce_id,
     t.created_at AS tenant_created_date,
     ue_created.email AS created_by_email
-FROM tenants t
-JOIN accounts a ON t.account_id = a.id
-LEFT JOIN user_entity ue_created ON ue_created.id = t.created_by::varchar
-WHERE LOWER(a.salesforce_account_id) = ANY(
-    SELECT unnest(string_to_array('%s', ','))
-) AND
-t.status = 'LIVE';`, csvFormat)
+	FROM tenants t
+	JOIN accounts a ON t.account_id = a.id
+	LEFT JOIN user_entity ue_created ON ue_created.id = t.created_by::varchar
+	WHERE LOWER(a.salesforce_account_id) = ANY(
+		SELECT unnest(string_to_array('%s', ','))
+	) AND
+	t.status = 'LIVE';`, csvFormat)
 
 	queryReq := types.QueryRequest{
 		Queries: []types.Query{
@@ -134,7 +152,7 @@ t.status = 'LIVE';`, csvFormat)
 				RefID:  "B",
 				Datasource: types.DataSource{
 					Type: "grafana-postgresql-datasource",
-					UID:  "ceb9ek6fvijuoc",
+					UID:  postgresUID,
 				},
 				DatasourceID: 36,
 				Format:       "table",
@@ -173,11 +191,15 @@ func FetchCostDataActivity(ctx context.Context, grafanaURL, serviceToken, inClau
 	defer logger.Sync()
 	sugar := logger.Sugar()
 
-	costQuery := fmt.Sprintf(`SELECT SALESFORCE_ID, SUM(TENANTCOST) AS COST
-FROM "ATLAN_CLOUD"."PUBLIC"."MONTHLY_DASHBOARD_CUSTOMER_TENANT_COST_SALESFORCE_VIEW"
-WHERE DATE_TRUNC('MONTH', BILLING_DATE) = DATE_TRUNC('MONTH', DATEADD(MONTH, -1, CURRENT_DATE))
-AND LOWER("SALESFORCE_ID") IN (%s)
-GROUP BY SALESFORCE_ID;`, inClause)
+	costUID := os.Getenv("SNOWFLAKE_COST_DATASOURCE_UID")
+	if costUID == "" {
+		return nil, fmt.Errorf("SNOWFLAKE_COST_DATASOURCE_UID environment variable is required")
+	}
+
+	costQuery := fmt.Sprintf(`SELECT SALESFORCE_ID, SUM(TENANTCOST) AS COST FROM 
+							"ATLAN_CLOUD"."PUBLIC"."MONTHLY_DASHBOARD_CUSTOMER_TENANT_COST_SALESFORCE_VIEW" WHERE 
+							DATE_TRUNC('MONTH', BILLING_DATE) = DATE_TRUNC('MONTH', DATEADD(MONTH, -1, CURRENT_DATE))
+							AND LOWER("SALESFORCE_ID") IN (%s) GROUP BY SALESFORCE_ID;`, inClause)
 
 	queryReq := types.QueryRequest{
 		Queries: []types.Query{
@@ -186,7 +208,7 @@ GROUP BY SALESFORCE_ID;`, inClause)
 				RefID:     "D",
 				Datasource: types.DataSource{
 					Type: "michelin-snowflake-datasource",
-					UID:  "be6kvyuxuzgg0e",
+					UID:  costUID,
 				},
 				DatasourceID: 34,
 				Format:       "table",

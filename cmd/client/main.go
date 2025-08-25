@@ -32,7 +32,7 @@ func StartWorkflow() error {
 
 	grafanaURL := os.Getenv("GRAFANA_URL")
 	if grafanaURL == "" {
-		grafanaURL = "https://observability.atlan.com"
+		sugar.Fatal("GRAFANA_URL environment variable is required")
 	}
 
 	// Get Temporal server address
